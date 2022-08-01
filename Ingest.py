@@ -66,7 +66,7 @@ for response_line in response.iter_lines():
 
 # COMMAND ----------
 
-
+#TODO - Delete Rules
 def set_rules(headers):
     # You can adjust the rules if needed
     sample_rules = [
