@@ -22,15 +22,6 @@ auth = { "Authorization" : f"Bearer {bearer_token}", "User-Agent" : "v2FilteredS
 
 # COMMAND ----------
 
-# Filtered Stream access
-
-rules = [ { "value" : "(#UkraineWare OR #WARINUKRAINE) -is:retweet lang:en", "tag" : "#UkraineWar tag" } ]
-payload = { "add" : rules }
-response = requests.post("https://api.twitter.com/2/tweets/search/stream/rules",
-                         headers = auth, json = payload)
-
-# COMMAND ----------
-
 # Connecting to Event Hub
 
 eventhub_policy = dbutils.secrets.get(scope = "TwitterStreamKV", key = "EventHubPolicy") #event hub shared access policy
@@ -41,32 +32,25 @@ eventhub_sas = dbutils.secrets.get(scope="TwitterStreamKV", key = "EventHubSAS")
 shared_key_credential = EventHubSharedKeyCredential(eventhub_policy,eventhub_sas)
 eh_producer_client = EventHubProducerClient(fully_qualified_namespace=eventhub_namespace, credential=shared_key_credential, eventhub_name=eventhub_name, transport_type=TransportType.AmqpOverWebsocket)
 
-
 # COMMAND ----------
 
-"""response = requests.get(
-    "https://api.twitter.com/2/tweets/search/stream?expansions=author_id&tweet.fields=created_at,public_metrics", headers = auth, stream=True,
-)
- 
-if response.status_code != 200:
-    raise Exception(
-        "Cannot get stream (HTTP {}): {}".format(
-            response.status_code, response.text
-        )
+# Print current rules
+
+def get_rules(headers, bearer_token):
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream/rules", headers=headers
     )
-increment =  0
-for response_line in response.iter_lines():
-    if response_line:
-        increment += 1
-        print(f"Message {increment} received")
-        event_data_batch = ehpc.create_batch()
-        data = EventData(body=response_line)
-        event_data_batch.add(data)
-        ehpc.send_batch(event_data_batch)"""
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get rules (HTTP {}): {}".format(response.status_code, response.text)
+        )
+    print(json.dumps(response.json()))
+    return response.json()
 
 # COMMAND ----------
 
-#TODO - Delete Rules
+# Set Twitter Rules
+
 def set_rules(headers):
     # You can adjust the rules if needed
     sample_rules = [
@@ -84,16 +68,26 @@ def set_rules(headers):
             "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
         )
     print(json.dumps(response.json()))
-    
-    increment = 0
-    for response_line in response.iter_lines():
-        if response_line:
-            increment += 1
-            print(f"Message {increment} received")
-            event_data_batch = eh_producer_client.create_batch()
-            data = EventData(body=response_line)
-            event_data_batch.add(data)
-            eh_producer_client.send_batch(event_data_batch)
+
+# COMMAND ----------
+
+def delete_all_rules(headers, bearer_token, rules):
+    if rules is None or "data" not in rules:
+        return None
+    ids = list(map(lambda rule: rule["id"], rules["data"]))
+    payload = {"delete": {"ids": ids}}
+    response = requests.post(
+        "https://api.twitter.com/2/tweets/search/stream/rules",
+        headers=headers,
+        json=payload
+    )
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot delete rules (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    print(json.dumps(response.json()))
 
 # COMMAND ----------
 
@@ -101,3 +95,26 @@ set_rules(auth)
 
 # COMMAND ----------
 
+#TODO Send stream to Event Hub -> Fix Authentication error
+
+def get_stream(headers, set, bearer_token):
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream", headers=headers, stream=True,
+    )
+    print(response.status_code)
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot delete rules (HTTP {}): {}".format(
+            "Cannot get stream (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    increment =  0
+    for response_line in response.iter_lines():
+        if response_line:
+            increment += 1
+            print(f"Message {increment} received")
+            event_data_batch = ehpc.create_batch()
+            data = EventData(body=response_line)
+            event_data_batch.add(data)
+            ehpc.send_batch(event_data_batch)
